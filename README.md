@@ -1,5 +1,9 @@
 # ClipList Manager
 
+<p align="center">
+  <img src="ClipList Manager/Assets.xcassets/AppIcon.appiconset/mac_512_2x.png" width="150" alt="DoList Manager Logo">
+</p>
+
 ClipList Manager is a beautifully polished, ultra-lightweight macOS Menu Bar utility designed to instantly track, manage, and retrieve your clipboard history. Built purely with native SwiftUI and SwiftData, it completely bypasses the macOS Dock and lives quietly in your top Menu Bar.
 
 ## ✨ Features
