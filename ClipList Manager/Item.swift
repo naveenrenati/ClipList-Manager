@@ -1,18 +1,17 @@
-//
-//  Item.swift
-//  ClipList Manager
-//
-//  Created by Naveen Renati on 19/04/26.
-//
-
 import Foundation
 import SwiftData
 
 @Model
-final class Item {
-    var timestamp: Date
+class ClipboardItem: Identifiable {
+    @Attribute(.unique) var id: UUID
+    var content: String
+    var createdAt: Date
+    var isPinned: Bool
     
-    init(timestamp: Date) {
-        self.timestamp = timestamp
+    init(content: String, createdAt: Date = Date(), isPinned: Bool = false) {
+        self.id = UUID()
+        self.content = content
+        self.createdAt = createdAt
+        self.isPinned = isPinned
     }
 }
