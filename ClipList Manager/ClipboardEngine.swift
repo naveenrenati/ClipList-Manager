@@ -8,9 +8,21 @@ final class ClipboardEngine: ObservableObject {
     private var lastChangeCount: Int = 0
     private var modelContext: ModelContext?
     
+    /// In-memory set of content strings present in the UNPINNED history.
+    /// Pinned items are intentionally excluded so pinning an item allows
+    /// it to be re-copied into the normal (unpinned) history independently.
+    private var knownContents: Set<String> = []
+
     func start(context: ModelContext) {
         self.modelContext = context
         self.lastChangeCount = NSPasteboard.general.changeCount
+        
+        // Seed the in-memory set from UNPINNED items only.
+        // Pinned items are excluded so they can coexist with a copy in normal history.
+        let fetchDescriptor = FetchDescriptor<ClipboardItem>(predicate: #Predicate { !$0.isPinned })
+        if let existing = try? context.fetch(fetchDescriptor) {
+            knownContents = Set(existing.map { $0.content })
+        }
         
         // Use Swift Concurrency to poll the pasteboard safely on the MainActor
         timerTask?.cancel()
@@ -51,17 +63,13 @@ final class ClipboardEngine: ObservableObject {
     private func saveToHistory(_ text: String) {
         guard let context = modelContext else { return }
         
-        let fetchDescriptor = FetchDescriptor<ClipboardItem>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        // O(1) check — if this content already exists anywhere in history, skip it
+        if knownContents.contains(text) { return }
+        
         do {
-            let items = try context.fetch(fetchDescriptor)
-            
-            // Prevent identical back-to-back duplicates
-            if let first = items.first, first.content == text {
-                return
-            }
-            
             let newItem = ClipboardItem(content: text)
             context.insert(newItem)
+            knownContents.insert(text)   // keep the set in sync
             try context.save()
             
             pruneHistory(context: context)
@@ -85,6 +93,7 @@ final class ClipboardEngine: ObservableObject {
             if unpinnedItems.count > limit {
                 let itemsToDelete = unpinnedItems.dropFirst(limit) // Keep exactly `limit` amount, delete the rest
                 for item in itemsToDelete {
+                    knownContents.remove(item.content)   // keep set in sync
                     context.delete(item)
                 }
                 try context.save()
@@ -102,5 +111,28 @@ final class ClipboardEngine: ObservableObject {
         
         // Update the change count so the engine doesn't re-save what we just copied!
         self.lastChangeCount = pasteboard.changeCount
+    }
+    
+    /// Call this when an unpinned item is pinned in the UI.
+    /// Removes it from knownContents so copying the same text
+    /// can create a fresh unpinned entry independently.
+    func itemDidPin(content: String) {
+        knownContents.remove(content)
+    }
+    
+    /// Call this when a pinned item is unpinned in the UI.
+    /// - If an unpinned copy already exists in history → delete the pinned item (avoid duplicate).
+    /// - If no unpinned copy exists → unpin the item and register it in knownContents.
+    func itemDidUnpin(_ item: ClipboardItem, context: ModelContext) {
+        if knownContents.contains(item.content) {
+            // A copy already exists in unpinned history — just delete this pinned item
+            context.delete(item)
+            try? context.save()
+        } else {
+            // No duplicate — unpin it and track it
+            item.isPinned = false
+            knownContents.insert(item.content)
+            try? context.save()
+        }
     }
 }
